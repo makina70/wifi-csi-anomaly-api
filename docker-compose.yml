@@ -1,0 +1,9 @@
+services:
+  ml-api:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      MODEL_PATH: /app/models/feature_ae_w500/model.pt
+      MODEL_DEVICE: cpu
+    restart: unless-stopped
