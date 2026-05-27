@@ -117,27 +117,78 @@ FEATURE_NAMES = [
     "diff_max_abs",
 ]
 
+DIFF_FEATURE_NAMES = [
+    "diff_mean",
+    "diff_std",
+    "diff_rms",
+    "diff_abs_mean",
+    "diff_max_abs",
+    "diff_p95_abs",
+    "diff_p99_abs",
+    "diff_range",
+    "diff_median_abs",
+    "diff_mad",
+]
 
-def make_window_features(windows: np.ndarray) -> np.ndarray:
+ROBUST_FEATURE_NAMES = [
+    "median",
+    "iqr",
+    "p95_abs",
+    "p99_abs",
+    "range",
+    "diff_abs_mean",
+    "diff_p95_abs",
+    "diff_p99_abs",
+    "diff_range",
+    "diff_mad",
+]
+
+
+def resolve_feature_names(feature_set: str) -> list[str]:
+    if feature_set == "base":
+        return FEATURE_NAMES
+    if feature_set == "diff":
+        return DIFF_FEATURE_NAMES
+    if feature_set == "robust":
+        return ROBUST_FEATURE_NAMES
+    raise ValueError(f"Unknown feature set: {feature_set}")
+
+
+def make_window_features(windows: np.ndarray, feature_set: str = "base") -> np.ndarray:
     signal = windows[:, :, 0]
     diff = np.diff(signal, axis=1)
 
-    features = np.stack(
-        [
-            np.mean(signal, axis=1),
-            np.std(signal, axis=1),
-            np.sqrt(np.mean(signal**2, axis=1)),
-            np.mean(np.abs(signal), axis=1),
-            np.max(np.abs(signal), axis=1),
-            np.quantile(np.abs(signal), 0.95, axis=1),
-            np.quantile(np.abs(signal), 0.99, axis=1),
-            np.max(signal, axis=1) - np.min(signal, axis=1),
-            np.std(diff, axis=1),
-            np.sqrt(np.mean(diff**2, axis=1)),
-            np.max(np.abs(diff), axis=1),
-        ],
-        axis=1,
-    )
+    abs_signal = np.abs(signal)
+    abs_diff = np.abs(diff)
+    signal_q75 = np.quantile(signal, 0.75, axis=1)
+    signal_q25 = np.quantile(signal, 0.25, axis=1)
+    diff_median = np.median(diff, axis=1, keepdims=True)
+
+    feature_map = {
+        "mean": np.mean(signal, axis=1),
+        "std": np.std(signal, axis=1),
+        "rms": np.sqrt(np.mean(signal**2, axis=1)),
+        "abs_mean": np.mean(abs_signal, axis=1),
+        "max_abs": np.max(abs_signal, axis=1),
+        "p95_abs": np.quantile(abs_signal, 0.95, axis=1),
+        "p99_abs": np.quantile(abs_signal, 0.99, axis=1),
+        "range": np.max(signal, axis=1) - np.min(signal, axis=1),
+        "median": np.median(signal, axis=1),
+        "iqr": signal_q75 - signal_q25,
+        "diff_mean": np.mean(diff, axis=1),
+        "diff_std": np.std(diff, axis=1),
+        "diff_rms": np.sqrt(np.mean(diff**2, axis=1)),
+        "diff_abs_mean": np.mean(abs_diff, axis=1),
+        "diff_max_abs": np.max(abs_diff, axis=1),
+        "diff_p95_abs": np.quantile(abs_diff, 0.95, axis=1),
+        "diff_p99_abs": np.quantile(abs_diff, 0.99, axis=1),
+        "diff_range": np.max(diff, axis=1) - np.min(diff, axis=1),
+        "diff_median_abs": np.median(abs_diff, axis=1),
+        "diff_mad": np.median(np.abs(diff - diff_median), axis=1),
+    }
+
+    names = resolve_feature_names(feature_set)
+    features = np.stack([feature_map[name] for name in names], axis=1)
     return features.astype(np.float32)
 
 

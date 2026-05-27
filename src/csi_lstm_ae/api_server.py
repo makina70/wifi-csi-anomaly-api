@@ -53,6 +53,7 @@ class CsiAnomalyService:
         self.window_size = int(config.get("window_size", 500))
         self.threshold = float(checkpoint["threshold"])
         self.feature_names = list(checkpoint.get("feature_names", FEATURE_NAMES))
+        self.feature_set = str(config.get("feature_set", "base"))
         self.mean = np.asarray(checkpoint["normalizer"]["mean"], dtype=np.float32)
         self.std = np.asarray(checkpoint["normalizer"]["std"], dtype=np.float32)
         self.device = torch.device(device)
@@ -95,7 +96,7 @@ class CsiAnomalyService:
                 return self.latest
 
             window = np.asarray(self.buffer, dtype=np.float32)[None, :, None]
-            features = make_window_features(window)
+            features = make_window_features(window, feature_set=self.feature_set)
             normalized = ((features - self.mean) / self.std).astype(np.float32)
 
             with torch.no_grad():

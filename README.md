@@ -61,6 +61,21 @@ The feature AE uses each window's statistical features:
 
 It still follows the same anomaly detection principle: train only on normal windows, then classify windows with high reconstruction error as abnormal.
 
+For better robustness against baseline shifts in normal CSI, the current API model uses the `robust` feature set:
+
+- median
+- IQR
+- 95th percentile absolute value
+- 99th percentile absolute value
+- range
+- first-difference absolute mean
+- first-difference 95th percentile absolute value
+- first-difference 99th percentile absolute value
+- first-difference range
+- first-difference MAD
+
+This keeps the AE approach but makes the input less dependent on the raw signal baseline. The first-difference features emphasize temporal change, which is closer to the actual movement cue.
+
 ## Setup
 
 Use Python 3.11+.
@@ -91,11 +106,12 @@ Recommended feature-AE run for the current sample:
 
 ```sh
 PYTHONPATH=src python3 -m csi_lstm_ae.train_eval_features \
+  --feature-set robust \
   --epochs 300 \
   --window-size 500 \
   --stride 100 \
   --threshold-quantile 0.99 \
-  --out outputs/ex1_feature_ae_w500
+  --out outputs/ex1_feature_ae_robust_w500
 ```
 
 ## Outputs
@@ -124,17 +140,27 @@ recall: 0.350
 f1: 0.506
 ```
 
-The feature AE improved the result substantially:
+The first feature AE improved the result substantially:
 
 ```text
-Feature-AE, window_size=500, stride=100
+Feature-AE, base features, window_size=500, stride=100
 accuracy: 0.965
 precision: 0.995
 recall: 0.934
 f1: 0.964
 ```
 
-For the exhibition demo, the feature AE is the better first candidate. It is still AE-based, but it uses robust window-level CSI features instead of trying to reconstruct the noisy raw sequence directly.
+The current robust/difference-focused Feature-AE improved it further:
+
+```text
+Feature-AE, robust features, window_size=500, stride=100
+accuracy: 0.995
+precision: 0.995
+recall: 0.995
+f1: 0.995
+```
+
+For the exhibition demo, the robust Feature-AE is the better first candidate. It is still AE-based, but it uses robust window-level CSI features instead of trying to reconstruct the noisy raw sequence directly.
 
 The trained model used by the API server is stored at:
 

@@ -15,11 +15,11 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from csi_lstm_ae.data import (
-    FEATURE_NAMES,
     fit_feature_normalizer,
     load_dataset,
     make_window_features,
     make_windows,
+    resolve_feature_names,
 )
 from csi_lstm_ae.model import FeatureAutoencoder
 from csi_lstm_ae.train_eval import classification_metrics
@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--latent-size", type=int, default=3)
+    parser.add_argument("--feature-set", choices=["base", "diff", "robust"], default="base")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--threshold-quantile", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=7)
@@ -99,7 +100,8 @@ def main() -> None:
 
     dataset = load_dataset(args.data)
     windowed = make_windows(dataset, args.window_size, args.stride)
-    features_raw = make_window_features(windowed.windows)
+    feature_names = resolve_feature_names(args.feature_set)
+    features_raw = make_window_features(windowed.windows, feature_set=args.feature_set)
 
     normal_features = features_raw[windowed.labels == 0]
     split = int(len(normal_features) * 0.8)
@@ -158,12 +160,13 @@ def main() -> None:
             "normal_windows": int(np.sum(windowed.labels == 0)),
             "abnormal_windows": int(np.sum(windowed.labels == 1)),
         },
-        "features": FEATURE_NAMES,
+        "features": feature_names,
         "model": {
             "type": "Feature Autoencoder",
             "latent_size": args.latent_size,
             "epochs": args.epochs,
             "threshold_quantile": args.threshold_quantile,
+            "feature_set": args.feature_set,
         },
         "threshold": threshold,
         "metrics": metrics,
@@ -178,7 +181,7 @@ def main() -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "feature_names": FEATURE_NAMES,
+            "feature_names": feature_names,
             "normalizer": {
                 "mean": normalizer.mean.tolist(),
                 "std": normalizer.std.tolist(),
