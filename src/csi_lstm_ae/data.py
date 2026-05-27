@@ -33,10 +33,11 @@ def load_dataset(path: str | Path) -> CsiDataset:
 
     signal = matrix[:, 1].astype(np.float32)
     time = matrix[:, 0].astype(np.float32)
-    midpoint_index = len(signal) // 2
+    metadata = payload.get("metadata", {})
+    midpoint_index = int(metadata.get("normal_samples", len(signal) // 2))
 
     return CsiDataset(
-        metadata=payload.get("metadata", {}),
+        metadata=metadata,
         time=time,
         signal=signal,
         midpoint_index=midpoint_index,
