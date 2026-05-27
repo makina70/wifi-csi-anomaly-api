@@ -1,4 +1,4 @@
-# Wi-Fi CSI LSTM Autoencoder
+# Wi-Fi CSI Anomaly API
 
 This project trains and evaluates Autoencoder-based anomaly detectors on preprocessed CSI time-series data.
 
