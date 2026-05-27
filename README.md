@@ -335,3 +335,16 @@ PYTHONPATH=src python3 -m csi_lstm_ae.simulate_stream \
 ```
 
 Use `--sleep 0` to send the sample quickly.
+
+To stream multiple datasets in sequence, pass `--data` multiple times:
+
+```sh
+PYTHONPATH=src python3 -m csi_lstm_ae.simulate_stream \
+  --data data/ex1_dataset.json \
+  --data /Users/uchimakikohki/Downloads/seijou1.json \
+  --data /Users/uchimakikohki/Downloads/ijou1.json \
+  --url http://localhost:8001/csi \
+  --chunk-size 100 \
+  --sleep 1 \
+  --sleep-between-datasets 2
+```
