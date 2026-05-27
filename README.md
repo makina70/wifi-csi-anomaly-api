@@ -150,7 +150,7 @@ recall: 0.934
 f1: 0.964
 ```
 
-The current robust/difference-focused Feature-AE improved it further:
+The robust/difference-focused Feature-AE improved it further:
 
 ```text
 Feature-AE, robust features, window_size=500, stride=100
@@ -160,13 +160,40 @@ recall: 0.995
 f1: 0.995
 ```
 
-For the exhibition demo, the robust Feature-AE is the better first candidate. It is still AE-based, but it uses robust window-level CSI features instead of trying to reconstruct the noisy raw sequence directly.
+That score came from a single normal/abnormal pair. For deployment, the default API model now uses a combined calibration set built from:
+
+- `ex1_dataset.json` normal half
+- `seijou1.json` normal
+- `ex1_dataset.json` abnormal half
+- `ijou1.json` abnormal
+
+This combined model is a better fit for the current exhibition environment because it covers more than one normal pattern from the same physical setup.
+
+Current default API model performance:
+
+```text
+On ex1 normal/abnormal:
+accuracy: 0.960
+precision: 0.984
+recall: 0.935
+f1: 0.959
+
+On seijou1 / ijou1:
+accuracy: 0.875
+precision: 0.948
+recall: 0.782
+f1: 0.857
+```
+
+For the exhibition demo, the robust Feature-AE remains the better AE-based candidate. It uses robust window-level CSI features instead of trying to reconstruct the noisy raw sequence directly.
 
 The trained model used by the API server is stored at:
 
 ```text
 models/feature_ae_w500/model.pt
 ```
+
+The current default artifact is the combined model described above.
 
 ## Interpretation
 
