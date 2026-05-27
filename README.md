@@ -224,7 +224,7 @@ curl http://localhost:8001/latest
 
 ### Start With Docker
 
-On the server Mac mini:
+On the exhibition Mac mini:
 
 ```sh
 docker compose up --build
@@ -233,20 +233,29 @@ docker compose up --build
 The ML API will listen on:
 
 ```text
-http://<server-mac-mini-ip>:8001
+http://localhost:8001
 ```
 
-The display Mac mini's UI container should be started with:
+The UI container from `wifi-camera-demo` runs on the same Mac mini. Start it in a separate terminal:
 
 ```sh
-ML_API_BASE_URL=http://<server-mac-mini-ip>:8001 docker compose up --build
+cd ../wifi-camera-demo
+docker compose up --build
 ```
 
-Then the web app should use:
+Then open the web app on the same Mac mini:
+
+```text
+http://localhost:3000
+```
+
+The web app should use:
 
 ```text
 /api/ml/latest
 ```
+
+The UI container proxies that path to `http://host.docker.internal:8001/latest`, so no `ML_API_BASE_URL` override is needed for the one-Mac-mini exhibition setup.
 
 ### Input From GMKtec
 
@@ -276,11 +285,11 @@ Recommended chunk size is 100 samples per request, which corresponds to about 1 
   "status": "abnormal",
   "anomalyScore": 1.0,
   "reconstructionError": 0.84,
-  "threshold": 0.5772173318266867,
+  "threshold": 0.5497710901498793,
   "timestamp": "2026-05-27T16:30:00+09:00",
   "samplesBuffered": 500,
   "windowSize": 500,
-  "featureNames": ["mean", "std", "rms"]
+  "featureNames": ["median", "iqr", "p95_abs"]
 }
 ```
 
