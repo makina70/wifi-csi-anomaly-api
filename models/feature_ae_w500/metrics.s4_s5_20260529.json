@@ -1,0 +1,175 @@
+{
+  "data_mode": "separate_train_eval",
+  "datasets": {
+    "train_datasets": [
+      {
+        "path": "/app/data/s4_s5/s4_normal_train.json",
+        "metadata": {
+          "source_file": "rx_2_260529_023738.csi",
+          "sampling_rate_hz": 100.0,
+          "pc1_explained_variance_ratio": 0.6617027728263966,
+          "matrix_columns": [
+            "Time (Seconds)",
+            "PC1_Phase_Variation"
+          ],
+          "matrix_shape": [
+            10152,
+            2
+          ],
+          "derived_from": "rx_2_260529_023738.csi",
+          "label": "normal",
+          "normal_samples": 10152,
+          "split_notes": "first 80% of s4; s4 is fully normal"
+        },
+        "samples": 10152,
+        "windows": 97,
+        "normal_windows": 97,
+        "abnormal_windows": 0
+      },
+      {
+        "path": "/app/data/s4_s5/s5_normal_train.json",
+        "metadata": {
+          "source_file": "rx_2_260528_214753.csi",
+          "sampling_rate_hz": 100.0,
+          "pc1_explained_variance_ratio": 0.42404736211041144,
+          "matrix_columns": [
+            "Time (Seconds)",
+            "PC1_Phase_Variation"
+          ],
+          "matrix_shape": [
+            5600,
+            2
+          ],
+          "derived_from": "rx_2_260528_214753.csi",
+          "label": "normal",
+          "normal_samples": 5600,
+          "split_notes": "first 80% of s5 rows with time <= 70s"
+        },
+        "samples": 5600,
+        "windows": 52,
+        "normal_windows": 52,
+        "abnormal_windows": 0
+      }
+    ],
+    "eval_datasets": [
+      {
+        "path": "/app/data/s4_s5/s4_normal_eval.json",
+        "metadata": {
+          "source_file": "rx_2_260529_023738.csi",
+          "sampling_rate_hz": 100.0,
+          "pc1_explained_variance_ratio": 0.6617027728263966,
+          "matrix_columns": [
+            "Time (Seconds)",
+            "PC1_Phase_Variation"
+          ],
+          "matrix_shape": [
+            2539,
+            2
+          ],
+          "derived_from": "rx_2_260529_023738.csi",
+          "label": "normal",
+          "normal_samples": 2539,
+          "split_notes": "last 20% of s4; s4 is fully normal"
+        },
+        "samples": 2539,
+        "windows": 21,
+        "normal_windows": 21,
+        "abnormal_windows": 0
+      },
+      {
+        "path": "/app/data/s4_s5/s5_normal_eval.json",
+        "metadata": {
+          "source_file": "rx_2_260528_214753.csi",
+          "sampling_rate_hz": 100.0,
+          "pc1_explained_variance_ratio": 0.42404736211041144,
+          "matrix_columns": [
+            "Time (Seconds)",
+            "PC1_Phase_Variation"
+          ],
+          "matrix_shape": [
+            1401,
+            2
+          ],
+          "derived_from": "rx_2_260528_214753.csi",
+          "label": "normal",
+          "normal_samples": 1401,
+          "split_notes": "last 20% of s5 rows with time <= 70s"
+        },
+        "samples": 1401,
+        "windows": 10,
+        "normal_windows": 10,
+        "abnormal_windows": 0
+      },
+      {
+        "path": "/app/data/s4_s5/s5_abnormal_eval.json",
+        "metadata": {
+          "source_file": "rx_2_260528_214753.csi",
+          "sampling_rate_hz": 100.0,
+          "pc1_explained_variance_ratio": 0.42404736211041144,
+          "matrix_columns": [
+            "Time (Seconds)",
+            "PC1_Phase_Variation"
+          ],
+          "matrix_shape": [
+            5732,
+            2
+          ],
+          "derived_from": "rx_2_260528_214753.csi",
+          "label": "abnormal",
+          "normal_samples": 0,
+          "split_notes": "s5 rows with time >= 77s; 70s < time < 77s ignored"
+        },
+        "samples": 5732,
+        "windows": 53,
+        "normal_windows": 0,
+        "abnormal_windows": 53
+      }
+    ]
+  },
+  "windowing": {
+    "window_size": 500,
+    "stride": 100,
+    "train_normal_windows": 149,
+    "train_windows": 119,
+    "validation_windows": 30,
+    "evaluation_windows": 84,
+    "evaluation_normal_windows": 31,
+    "evaluation_abnormal_windows": 53
+  },
+  "features": [
+    "median",
+    "iqr",
+    "p95_abs",
+    "p99_abs",
+    "range",
+    "diff_abs_mean",
+    "diff_p95_abs",
+    "diff_p99_abs",
+    "diff_range",
+    "diff_mad"
+  ],
+  "model": {
+    "type": "Feature Autoencoder",
+    "latent_size": 3,
+    "epochs": 300,
+    "threshold_quantile": 0.9,
+    "feature_set": "robust"
+  },
+  "threshold": 0.08089178800582886,
+  "metrics": {
+    "tp": 47,
+    "tn": 22,
+    "fp": 9,
+    "fn": 6,
+    "accuracy": 0.8214285714285714,
+    "precision": 0.8392857142857143,
+    "recall": 0.8867924528301887,
+    "f1": 0.8623853211009174
+  },
+  "score_stats": {
+    "normal_mean": 0.1104288250207901,
+    "normal_p99": 0.6943979859352112,
+    "abnormal_mean": 0.18594996631145477,
+    "abnormal_p99": 0.49037742614746094
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "source_files": {
+    "s4": "PicoScenes-Python-Toolbox/s4.json",
+    "s5": "PicoScenes-Python-Toolbox/s5.json"
+  },
+  "rules": {
+    "s4": "all normal",
+    "s5_normal": "time <= 70.0 seconds",
+    "s5_ignored": "70.0 < time < 77.0 seconds",
+    "s5_abnormal": "time >= 77.0 seconds",
+    "train_ratio_for_normal_data": 0.8
+  },
+  "counts": {
+    "s4_total": 12691,
+    "s4_train_normal": 10152,
+    "s4_eval_normal": 2539,
+    "s5_total": 13432,
+    "s5_normal_total": 7001,
+    "s5_train_normal": 5600,
+    "s5_eval_normal": 1401,
+    "s5_ignored": 699,
+    "s5_eval_abnormal": 5732
+  },
+  "outputs": [
+    "data/s4_s5/s4_normal_train.json",
+    "data/s4_s5/s4_normal_eval.json",
+    "data/s4_s5/s5_normal_train.json",
+    "data/s4_s5/s5_normal_eval.json",
+    "data/s4_s5/s5_abnormal_eval.json"
+  ]
+}
