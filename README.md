@@ -114,6 +114,30 @@ PYTHONPATH=src python3 -m csi_lstm_ae.train_eval_features \
   --out outputs/ex1_feature_ae_robust_w500
 ```
 
+If you want to separate training data from evaluation data, use `--train-data` and one or more evaluation inputs.
+`--train-data` keeps only normal windows for training. Evaluation can use:
+
+- `--eval-data`: mixed files that already contain normal/abnormal labels through `metadata.normal_samples`
+- `--eval-normal`: files treated as fully normal
+- `--eval-abnormal`: files treated as fully abnormal
+
+Example:
+
+```sh
+PYTHONPATH=src python3 -m csi_lstm_ae.train_eval_features \
+  --train-data data/ex1_dataset.json \
+  --eval-normal /Users/uchimakikohki/Downloads/seijou1.json \
+  --eval-abnormal /Users/uchimakikohki/Downloads/ijou1.json \
+  --feature-set robust \
+  --epochs 300 \
+  --window-size 500 \
+  --stride 100 \
+  --threshold-quantile 0.90 \
+  --out outputs/exhibition_split_eval
+```
+
+In this mode, training and threshold calibration come only from the training-side normal windows. Evaluation metrics are computed only on the explicitly supplied evaluation datasets.
+
 ## Outputs
 
 The default output directory is `outputs/ex1_lstm_ae`.
@@ -160,29 +184,39 @@ recall: 0.995
 f1: 0.995
 ```
 
-That score came from a single normal/abnormal pair. For deployment, the default API model now uses a combined calibration set built from:
+That score came from a single normal/abnormal pair. For deployment, the default API model now uses a held-out split built from the exhibition data:
 
-- `ex1_dataset.json` normal half
-- `seijou1.json` normal
-- `ex1_dataset.json` abnormal half
-- `ijou1.json` abnormal
+- train normal:
+  - first `80%` of the normal half of `ex1_dataset.json`
+  - first `80%` of `seijou1.json`
+- evaluation only:
+  - remaining `20%` of the normal half of `ex1_dataset.json`
+  - all abnormal half of `ex1_dataset.json`
+  - remaining `20%` of `seijou1.json`
+  - all of `ijou1.json`
 
-This combined model is a better fit for the current exhibition environment because it covers more than one normal pattern from the same physical setup.
+This is stricter than the previous setup because the evaluation metrics come from samples that were not used for model fitting.
 
 Current default API model performance:
 
 ```text
-On ex1 normal/abnormal:
-accuracy: 0.960
-precision: 0.984
-recall: 0.935
-f1: 0.959
+Held-out ex1:
+accuracy: 0.978
+precision: 0.975
+recall: 1.000
+f1: 0.987
 
-On seijou1 / ijou1:
-accuracy: 0.875
-precision: 0.948
-recall: 0.782
-f1: 0.857
+Held-out seijou1 / ijou1:
+accuracy: 0.911
+precision: 0.949
+recall: 0.944
+f1: 0.947
+
+Combined held-out evaluation:
+accuracy: 0.932
+precision: 0.957
+recall: 0.962
+f1: 0.960
 ```
 
 For the exhibition demo, the robust Feature-AE remains the better AE-based candidate. It uses robust window-level CSI features instead of trying to reconstruct the noisy raw sequence directly.
@@ -193,11 +227,18 @@ The trained model used by the API server is stored at:
 models/feature_ae_w500/model.pt
 ```
 
-The current default artifact is the combined model described above.
+The current default artifact is the held-out split model described above.
 
 ## Interpretation
 
 This is an anomaly detection setup, not a supervised classifier. The model learns normal CSI behavior from the normal half only. Abnormal detection is based on reconstruction error.
+
+Current `train_eval_features.py` behavior:
+
+- training uses only normal windows
+- threshold is set from the validation split of those training-side normal windows
+- if you pass only `--data`, training and evaluation come from the same source file
+- if you pass `--train-data` and evaluation inputs, training and evaluation are separated by dataset
 
 If the normal and abnormal score distributions overlap, adjust:
 

@@ -28,6 +28,10 @@ from csi_lstm_ae.train_eval import classification_metrics
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a feature autoencoder on CSI window features.")
     parser.add_argument("--data", default="data/ex1_dataset.json")
+    parser.add_argument("--train-data", action="append", default=[])
+    parser.add_argument("--eval-data", action="append", default=[])
+    parser.add_argument("--eval-normal", action="append", default=[])
+    parser.add_argument("--eval-abnormal", action="append", default=[])
     parser.add_argument("--out", default="outputs/ex1_feature_ae")
     parser.add_argument("--window-size", type=int, default=300)
     parser.add_argument("--stride", type=int, default=50)
@@ -91,6 +95,182 @@ def plot_histogram(labels: np.ndarray, scores: np.ndarray, threshold: float, pat
     plt.close(fig)
 
 
+def load_feature_blocks(
+    paths: list[str],
+    *,
+    window_size: int,
+    stride: int,
+    feature_set: str,
+    forced_label: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
+    feature_blocks: list[np.ndarray] = []
+    label_blocks: list[np.ndarray] = []
+    center_blocks: list[np.ndarray] = []
+    dataset_summaries: list[dict] = []
+
+    for path in paths:
+        dataset = load_dataset(path)
+        if forced_label is not None:
+            midpoint_index = len(dataset.signal) if forced_label == 0 else 0
+            dataset = type(dataset)(
+                metadata=dataset.metadata,
+                time=dataset.time,
+                signal=dataset.signal,
+                midpoint_index=midpoint_index,
+            )
+
+        windowed = make_windows(
+            dataset,
+            window_size=window_size,
+            stride=stride,
+            drop_boundary_crossing=forced_label is None,
+        )
+        features = make_window_features(windowed.windows, feature_set=feature_set)
+        labels = windowed.labels if forced_label is None else np.full(len(features), forced_label, dtype=np.int64)
+
+        feature_blocks.append(features)
+        label_blocks.append(labels)
+        center_blocks.append(windowed.centers_sec)
+        dataset_summaries.append(
+            {
+                "path": str(Path(path).resolve()),
+                "metadata": dataset.metadata,
+                "samples": int(len(dataset.signal)),
+                "windows": int(len(windowed.windows)),
+                "normal_windows": int(np.sum(labels == 0)),
+                "abnormal_windows": int(np.sum(labels == 1)),
+            }
+        )
+
+    if not feature_blocks:
+        return (
+            np.empty((0, len(resolve_feature_names(feature_set))), dtype=np.float32),
+            np.empty((0,), dtype=np.int64),
+            np.empty((0,), dtype=np.float32),
+            dataset_summaries,
+        )
+
+    return (
+        np.concatenate(feature_blocks, axis=0).astype(np.float32),
+        np.concatenate(label_blocks, axis=0).astype(np.int64),
+        np.concatenate(center_blocks, axis=0).astype(np.float32),
+        dataset_summaries,
+    )
+
+
+def build_experiment_data(args: argparse.Namespace) -> dict:
+    separate_mode = bool(args.train_data or args.eval_data or args.eval_normal or args.eval_abnormal)
+    if not separate_mode:
+        dataset = load_dataset(args.data)
+        windowed = make_windows(dataset, args.window_size, args.stride)
+        features = make_window_features(windowed.windows, feature_set=args.feature_set)
+        return {
+            "mode": "legacy_single_dataset",
+            "train_features_raw": features[windowed.labels == 0],
+            "eval_features_raw": features,
+            "eval_labels": windowed.labels,
+            "eval_centers_sec": windowed.centers_sec,
+            "summary": {
+                "train_datasets": [
+                    {
+                        "path": str(Path(args.data).resolve()),
+                        "metadata": dataset.metadata,
+                        "samples": int(len(dataset.signal)),
+                        "windows": int(len(windowed.windows)),
+                        "normal_windows": int(np.sum(windowed.labels == 0)),
+                        "abnormal_windows": int(np.sum(windowed.labels == 1)),
+                    }
+                ],
+                "eval_datasets": [
+                    {
+                        "path": str(Path(args.data).resolve()),
+                        "metadata": dataset.metadata,
+                        "samples": int(len(dataset.signal)),
+                        "windows": int(len(windowed.windows)),
+                        "normal_windows": int(np.sum(windowed.labels == 0)),
+                        "abnormal_windows": int(np.sum(windowed.labels == 1)),
+                    }
+                ],
+            },
+        }
+
+    if not args.train_data:
+        raise ValueError("--train-data is required when using separate train/eval inputs")
+
+    train_features_raw, train_labels, _, train_summary = load_feature_blocks(
+        args.train_data,
+        window_size=args.window_size,
+        stride=args.stride,
+        feature_set=args.feature_set,
+        forced_label=None,
+    )
+    train_normals = train_features_raw[train_labels == 0]
+    if len(train_normals) == 0:
+        raise ValueError("No normal windows found in --train-data")
+
+    eval_feature_parts: list[np.ndarray] = []
+    eval_label_parts: list[np.ndarray] = []
+    eval_center_parts: list[np.ndarray] = []
+    eval_summary: list[dict] = []
+
+    if args.eval_data:
+        features, labels, centers, summary = load_feature_blocks(
+            args.eval_data,
+            window_size=args.window_size,
+            stride=args.stride,
+            feature_set=args.feature_set,
+            forced_label=None,
+        )
+        if len(features):
+            eval_feature_parts.append(features)
+            eval_label_parts.append(labels)
+            eval_center_parts.append(centers)
+        eval_summary.extend(summary)
+
+    if args.eval_normal:
+        features, labels, centers, summary = load_feature_blocks(
+            args.eval_normal,
+            window_size=args.window_size,
+            stride=args.stride,
+            feature_set=args.feature_set,
+            forced_label=0,
+        )
+        if len(features):
+            eval_feature_parts.append(features)
+            eval_label_parts.append(labels)
+            eval_center_parts.append(centers)
+        eval_summary.extend(summary)
+
+    if args.eval_abnormal:
+        features, labels, centers, summary = load_feature_blocks(
+            args.eval_abnormal,
+            window_size=args.window_size,
+            stride=args.stride,
+            feature_set=args.feature_set,
+            forced_label=1,
+        )
+        if len(features):
+            eval_feature_parts.append(features)
+            eval_label_parts.append(labels)
+            eval_center_parts.append(centers)
+        eval_summary.extend(summary)
+
+    if not eval_feature_parts:
+        raise ValueError("At least one of --eval-data, --eval-normal, or --eval-abnormal is required in separate mode")
+
+    return {
+        "mode": "separate_train_eval",
+        "train_features_raw": train_normals,
+        "eval_features_raw": np.concatenate(eval_feature_parts, axis=0).astype(np.float32),
+        "eval_labels": np.concatenate(eval_label_parts, axis=0).astype(np.int64),
+        "eval_centers_sec": np.concatenate(eval_center_parts, axis=0).astype(np.float32),
+        "summary": {
+            "train_datasets": train_summary,
+            "eval_datasets": eval_summary,
+        },
+    }
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
@@ -98,23 +278,23 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
-    dataset = load_dataset(args.data)
-    windowed = make_windows(dataset, args.window_size, args.stride)
     feature_names = resolve_feature_names(args.feature_set)
-    features_raw = make_window_features(windowed.windows, feature_set=args.feature_set)
+    experiment = build_experiment_data(args)
 
-    normal_features = features_raw[windowed.labels == 0]
+    normal_features = experiment["train_features_raw"]
     split = int(len(normal_features) * 0.8)
+    if split <= 0 or split >= len(normal_features):
+        raise ValueError("Not enough normal windows to create train/validation split")
     train_raw = normal_features[:split]
     val_raw = normal_features[split:]
 
     normalizer = fit_feature_normalizer(train_raw)
     train = normalizer.transform(train_raw).astype(np.float32)
     val = normalizer.transform(val_raw).astype(np.float32)
-    all_features = normalizer.transform(features_raw).astype(np.float32)
+    eval_features = normalizer.transform(experiment["eval_features_raw"]).astype(np.float32)
 
     device = torch.device(args.device)
-    model = FeatureAutoencoder(input_size=all_features.shape[1], latent_size=args.latent_size).to(device)
+    model = FeatureAutoencoder(input_size=eval_features.shape[1], latent_size=args.latent_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.MSELoss()
 
@@ -141,24 +321,22 @@ def main() -> None:
 
     val_scores = score_model(model, val, args.batch_size, device)
     threshold = float(np.quantile(val_scores, args.threshold_quantile))
-    scores = score_model(model, all_features, args.batch_size, device)
+    scores = score_model(model, eval_features, args.batch_size, device)
     predictions = (scores > threshold).astype(np.int64)
-    metrics = classification_metrics(windowed.labels, predictions)
+    metrics = classification_metrics(experiment["eval_labels"], predictions)
 
     summary = {
-        "dataset": {
-            "path": str(Path(args.data).resolve()),
-            "metadata": dataset.metadata,
-            "samples": int(len(dataset.signal)),
-            "normal_samples": int(dataset.midpoint_index),
-            "abnormal_samples": int(len(dataset.signal) - dataset.midpoint_index),
-        },
+        "data_mode": experiment["mode"],
+        "datasets": experiment["summary"],
         "windowing": {
             "window_size": args.window_size,
             "stride": args.stride,
-            "total_windows": int(len(windowed.windows)),
-            "normal_windows": int(np.sum(windowed.labels == 0)),
-            "abnormal_windows": int(np.sum(windowed.labels == 1)),
+            "train_normal_windows": int(len(normal_features)),
+            "train_windows": int(len(train_raw)),
+            "validation_windows": int(len(val_raw)),
+            "evaluation_windows": int(len(experiment["eval_features_raw"])),
+            "evaluation_normal_windows": int(np.sum(experiment["eval_labels"] == 0)),
+            "evaluation_abnormal_windows": int(np.sum(experiment["eval_labels"] == 1)),
         },
         "features": feature_names,
         "model": {
@@ -171,10 +349,10 @@ def main() -> None:
         "threshold": threshold,
         "metrics": metrics,
         "score_stats": {
-            "normal_mean": float(scores[windowed.labels == 0].mean()),
-            "normal_p99": float(np.quantile(scores[windowed.labels == 0], 0.99)),
-            "abnormal_mean": float(scores[windowed.labels == 1].mean()),
-            "abnormal_p99": float(np.quantile(scores[windowed.labels == 1], 0.99)),
+            "normal_mean": float(scores[experiment["eval_labels"] == 0].mean()),
+            "normal_p99": float(np.quantile(scores[experiment["eval_labels"] == 0], 0.99)),
+            "abnormal_mean": float(scores[experiment["eval_labels"] == 1].mean()),
+            "abnormal_p99": float(np.quantile(scores[experiment["eval_labels"] == 1], 0.99)),
         },
     }
 
@@ -193,16 +371,16 @@ def main() -> None:
     )
     np.savez(
         output_dir / "scores.npz",
-        centers_sec=windowed.centers_sec,
-        labels=windowed.labels,
+        centers_sec=experiment["eval_centers_sec"],
+        labels=experiment["eval_labels"],
         scores=scores,
         predictions=predictions,
-        features_raw=features_raw,
+        features_raw=experiment["eval_features_raw"],
     )
     (output_dir / "metrics.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     (output_dir / "losses.json").write_text(json.dumps(losses, ensure_ascii=False, indent=2), encoding="utf-8")
-    plot_scores(windowed.centers_sec, windowed.labels, scores, threshold, output_dir / "scores_timeline.png")
-    plot_histogram(windowed.labels, scores, threshold, output_dir / "score_histogram.png")
+    plot_scores(experiment["eval_centers_sec"], experiment["eval_labels"], scores, threshold, output_dir / "scores_timeline.png")
+    plot_histogram(experiment["eval_labels"], scores, threshold, output_dir / "score_histogram.png")
 
     print(json.dumps(metrics, indent=2))
     print(f"wrote outputs to {output_dir}")
