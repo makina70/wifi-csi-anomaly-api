@@ -36,6 +36,7 @@ class LatestResult(BaseModel):
     featureNames: list[str]
     featureValues: dict[str, float] | None = None
     featureRatios: dict[str, float] | None = None
+    adaptiveThresholds: dict[str, float] | None = None
     calibrationWindows: int = 0
     calibrationRequiredWindows: int = 0
 
@@ -47,6 +48,7 @@ class HealthResult(BaseModel):
     windowSize: int
     threshold: float
     scoringMode: str
+    adaptiveThresholds: dict[str, float] | None = None
     calibrationWindows: int = 0
     calibrationRequiredWindows: int = 0
 
@@ -132,6 +134,7 @@ class CsiAnomalyService:
                         windowSize=self.window_size,
                         featureNames=self.feature_names,
                         featureValues=feature_values,
+                        adaptiveThresholds=self.adaptive_thresholds,
                         calibrationWindows=len(self.calibration_values),
                         calibrationRequiredWindows=self.calibration_required_windows,
                     )
@@ -161,6 +164,7 @@ class CsiAnomalyService:
                 featureNames=self.feature_names,
                 featureValues=feature_values,
                 featureRatios=feature_ratios,
+                adaptiveThresholds=self.adaptive_thresholds,
                 calibrationWindows=len(self.calibration_values),
                 calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
             )
@@ -219,6 +223,7 @@ class CsiAnomalyService:
                 windowSize=self.window_size,
                 threshold=self.threshold,
                 scoringMode=str(self.scoring.get("mode", "autoencoder")),
+                adaptiveThresholds=self.adaptive_thresholds,
                 calibrationWindows=len(self.calibration_values),
                 calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
             )
