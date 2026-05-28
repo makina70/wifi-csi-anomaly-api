@@ -54,6 +54,7 @@ class CsiAnomalyService:
         self.threshold = float(checkpoint["threshold"])
         self.feature_names = list(checkpoint.get("feature_names", FEATURE_NAMES))
         self.feature_set = str(config.get("feature_set", "base"))
+        self.scoring = checkpoint.get("scoring", {"mode": "autoencoder"})
         self.mean = np.asarray(checkpoint["normalizer"]["mean"], dtype=np.float32)
         self.std = np.asarray(checkpoint["normalizer"]["std"], dtype=np.float32)
         self.device = torch.device(device)
@@ -97,12 +98,15 @@ class CsiAnomalyService:
 
             window = np.asarray(self.buffer, dtype=np.float32)[None, :, None]
             features = make_window_features(window, feature_set=self.feature_set)
-            normalized = ((features - self.mean) / self.std).astype(np.float32)
 
-            with torch.no_grad():
-                tensor = torch.from_numpy(normalized).to(self.device)
-                reconstruction = self.model(tensor)
-                error = float(torch.mean((reconstruction - tensor) ** 2).cpu().item())
+            if self.scoring.get("mode") == "feature_threshold":
+                error = self.score_feature_threshold(features[0])
+            else:
+                normalized = ((features - self.mean) / self.std).astype(np.float32)
+                with torch.no_grad():
+                    tensor = torch.from_numpy(normalized).to(self.device)
+                    reconstruction = self.model(tensor)
+                    error = float(torch.mean((reconstruction - tensor) ** 2).cpu().item())
 
             status: Literal["normal", "abnormal"] = "abnormal" if error > self.threshold else "normal"
             anomaly_score = min(1.0, max(0.0, error / self.threshold)) if self.threshold > 0 else 0.0
@@ -117,6 +121,23 @@ class CsiAnomalyService:
                 featureNames=self.feature_names,
             )
             return self.latest
+
+    def score_feature_threshold(self, features: np.ndarray) -> float:
+        thresholds = self.scoring.get("thresholds", {})
+        if not thresholds:
+            return 0.0
+
+        feature_index = {name: index for index, name in enumerate(self.feature_names)}
+        ratios: list[float] = []
+        for name, threshold in thresholds.items():
+            if name not in feature_index:
+                continue
+            threshold_value = float(threshold)
+            if threshold_value <= 0:
+                continue
+            ratios.append(float(features[feature_index[name]] / threshold_value))
+
+        return max(ratios) if ratios else 0.0
 
     def get_latest(self) -> LatestResult:
         with self.lock:

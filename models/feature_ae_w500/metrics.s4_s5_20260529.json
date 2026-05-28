@@ -154,24 +154,29 @@
     "epochs": 300,
     "threshold_quantile": 0.9,
     "feature_set": "robust",
-    "deployment_threshold_source": "90th percentile of held-out normal evaluation scores from s4/s5 split"
+    "deployment_threshold_source": "90th percentile of held-out normal s4/s5 windows for iqr and diff_mad",
+    "deployment_scoring": "feature_threshold",
+    "feature_thresholds": {
+      "iqr": 104.33055114746094,
+      "diff_mad": 119.10617065429688
+    }
   },
-  "threshold": 0.23617203533649445,
+  "threshold": 1.0,
   "metrics": {
-    "tp": 14,
-    "tn": 28,
-    "fp": 3,
-    "fn": 39,
-    "accuracy": 0.5,
-    "precision": 0.8235294117647058,
-    "recall": 0.2641509433962264,
-    "f1": 0.4
+    "tp": 50,
+    "tn": 27,
+    "fp": 4,
+    "fn": 3,
+    "accuracy": 0.9166666666666666,
+    "precision": 0.9259259259259259,
+    "recall": 0.9433962264150944,
+    "f1": 0.9345794392523364
   },
   "score_stats": {
-    "normal_mean": 0.1104288250207901,
-    "normal_p99": 0.6943979859352112,
-    "abnormal_mean": 0.18594996631145477,
-    "abnormal_p99": 0.49037742614746094
+    "normal_mean": 0.6741970777511597,
+    "normal_p99": 1.216506838798523,
+    "abnormal_mean": 1.7454169988632202,
+    "abnormal_p99": 2.2089295387268066
   },
-  "deployment_note": "Threshold raised after GMKtec no-person stream produced reconstructionError around 0.221 with the previous 0.0809 threshold. This reduces false positives but lowers recall for subtle motion."
+  "deployment_note": "API now uses feature-threshold scoring instead of autoencoder reconstruction error because s4/s5 motion is better separated by iqr and diff_mad than by AE reconstruction error."
 }
