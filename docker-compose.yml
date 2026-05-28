@@ -6,4 +6,8 @@ services:
     environment:
       MODEL_PATH: /app/models/feature_ae_w500/model.pt
       MODEL_DEVICE: cpu
+      ADAPTIVE_FEATURE_CALIBRATION: "true"
+      CALIBRATION_WINDOWS: "20"
+      CALIBRATION_QUANTILE: "0.95"
+      CALIBRATION_MULTIPLIER: "1.20"
     restart: unless-stopped

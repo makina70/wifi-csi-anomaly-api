@@ -34,6 +34,10 @@ class LatestResult(BaseModel):
     samplesBuffered: int
     windowSize: int
     featureNames: list[str]
+    featureValues: dict[str, float] | None = None
+    featureRatios: dict[str, float] | None = None
+    calibrationWindows: int = 0
+    calibrationRequiredWindows: int = 0
 
 
 class HealthResult(BaseModel):
@@ -42,6 +46,9 @@ class HealthResult(BaseModel):
     samplesBuffered: int
     windowSize: int
     threshold: float
+    scoringMode: str
+    calibrationWindows: int = 0
+    calibrationRequiredWindows: int = 0
 
 
 class CsiAnomalyService:
@@ -55,6 +62,15 @@ class CsiAnomalyService:
         self.feature_names = list(checkpoint.get("feature_names", FEATURE_NAMES))
         self.feature_set = str(config.get("feature_set", "base"))
         self.scoring = checkpoint.get("scoring", {"mode": "autoencoder"})
+        self.adaptive_calibration_enabled = (
+            self.scoring.get("mode") == "feature_threshold"
+            and os.getenv("ADAPTIVE_FEATURE_CALIBRATION", "true").lower() in {"1", "true", "yes", "on"}
+        )
+        self.calibration_required_windows = int(os.getenv("CALIBRATION_WINDOWS", "20"))
+        self.calibration_quantile = float(os.getenv("CALIBRATION_QUANTILE", "0.95"))
+        self.calibration_multiplier = float(os.getenv("CALIBRATION_MULTIPLIER", "1.20"))
+        self.calibration_values: list[dict[str, float]] = []
+        self.adaptive_thresholds: dict[str, float] | None = None
         self.mean = np.asarray(checkpoint["normalizer"]["mean"], dtype=np.float32)
         self.std = np.asarray(checkpoint["normalizer"]["std"], dtype=np.float32)
         self.device = torch.device(device)
@@ -77,6 +93,7 @@ class CsiAnomalyService:
             samplesBuffered=0,
             windowSize=self.window_size,
             featureNames=self.feature_names,
+            calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
         )
 
     def add_samples(self, samples: list[float], timestamp: str | None = None) -> LatestResult:
@@ -93,20 +110,43 @@ class CsiAnomalyService:
                     samplesBuffered=len(self.buffer),
                     windowSize=self.window_size,
                     featureNames=self.feature_names,
+                    calibrationWindows=len(self.calibration_values),
+                    calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
                 )
                 return self.latest
 
             window = np.asarray(self.buffer, dtype=np.float32)[None, :, None]
             features = make_window_features(window, feature_set=self.feature_set)
+            feature_values = self.selected_feature_values(features[0])
+
+            if self.adaptive_calibration_enabled and self.adaptive_thresholds is None:
+                self.calibration_values.append(feature_values)
+                if len(self.calibration_values) < self.calibration_required_windows:
+                    self.latest = LatestResult(
+                        status="warming_up",
+                        anomalyScore=0.0,
+                        reconstructionError=None,
+                        threshold=self.threshold,
+                        timestamp=timestamp or utc_now(),
+                        samplesBuffered=len(self.buffer),
+                        windowSize=self.window_size,
+                        featureNames=self.feature_names,
+                        featureValues=feature_values,
+                        calibrationWindows=len(self.calibration_values),
+                        calibrationRequiredWindows=self.calibration_required_windows,
+                    )
+                    return self.latest
+                self.adaptive_thresholds = self.compute_adaptive_thresholds()
 
             if self.scoring.get("mode") == "feature_threshold":
-                error = self.score_feature_threshold(features[0])
+                error, feature_ratios = self.score_feature_threshold(features[0])
             else:
                 normalized = ((features - self.mean) / self.std).astype(np.float32)
                 with torch.no_grad():
                     tensor = torch.from_numpy(normalized).to(self.device)
                     reconstruction = self.model(tensor)
                     error = float(torch.mean((reconstruction - tensor) ** 2).cpu().item())
+                feature_ratios = None
 
             status: Literal["normal", "abnormal"] = "abnormal" if error > self.threshold else "normal"
             anomaly_score = min(1.0, max(0.0, error / self.threshold)) if self.threshold > 0 else 0.0
@@ -119,25 +159,52 @@ class CsiAnomalyService:
                 samplesBuffered=len(self.buffer),
                 windowSize=self.window_size,
                 featureNames=self.feature_names,
+                featureValues=feature_values,
+                featureRatios=feature_ratios,
+                calibrationWindows=len(self.calibration_values),
+                calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
             )
             return self.latest
 
-    def score_feature_threshold(self, features: np.ndarray) -> float:
-        thresholds = self.scoring.get("thresholds", {})
+    def selected_feature_values(self, features: np.ndarray) -> dict[str, float]:
+        feature_index = {name: index for index, name in enumerate(self.feature_names)}
+        selected_names = self.scoring.get("selected_features") or list(self.scoring.get("thresholds", {}))
+        values: dict[str, float] = {}
+        for name in selected_names:
+            if name in feature_index:
+                values[name] = float(features[feature_index[name]])
+        return values
+
+    def compute_adaptive_thresholds(self) -> dict[str, float]:
+        thresholds: dict[str, float] = {}
+        selected_names = self.scoring.get("selected_features") or list(self.scoring.get("thresholds", {}))
+        for name in selected_names:
+            values = [entry[name] for entry in self.calibration_values if name in entry]
+            if not values:
+                continue
+            threshold = float(np.quantile(np.asarray(values, dtype=np.float32), self.calibration_quantile))
+            thresholds[name] = max(threshold * self.calibration_multiplier, 1e-6)
+        return thresholds
+
+    def score_feature_threshold(self, features: np.ndarray) -> tuple[float, dict[str, float]]:
+        thresholds = self.adaptive_thresholds if self.adaptive_thresholds is not None else self.scoring.get("thresholds", {})
         if not thresholds:
-            return 0.0
+            return 0.0, {}
 
         feature_index = {name: index for index, name in enumerate(self.feature_names)}
         ratios: list[float] = []
+        feature_ratios: dict[str, float] = {}
         for name, threshold in thresholds.items():
             if name not in feature_index:
                 continue
             threshold_value = float(threshold)
             if threshold_value <= 0:
                 continue
-            ratios.append(float(features[feature_index[name]] / threshold_value))
+            ratio = float(features[feature_index[name]] / threshold_value)
+            ratios.append(ratio)
+            feature_ratios[name] = ratio
 
-        return max(ratios) if ratios else 0.0
+        return (max(ratios) if ratios else 0.0), feature_ratios
 
     def get_latest(self) -> LatestResult:
         with self.lock:
@@ -151,6 +218,9 @@ class CsiAnomalyService:
                 samplesBuffered=len(self.buffer),
                 windowSize=self.window_size,
                 threshold=self.threshold,
+                scoringMode=str(self.scoring.get("mode", "autoencoder")),
+                calibrationWindows=len(self.calibration_values),
+                calibrationRequiredWindows=self.calibration_required_windows if self.adaptive_calibration_enabled else 0,
             )
 
 
