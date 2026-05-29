@@ -75,6 +75,11 @@ class CsiAnomalyService:
         self.calibration_quantile = float(os.getenv("CALIBRATION_QUANTILE", "0.80"))
         self.calibration_lower_multiplier = float(os.getenv("CALIBRATION_LOWER_MULTIPLIER", "0.80"))
         self.calibration_multiplier = float(os.getenv("CALIBRATION_MULTIPLIER", "1.00"))
+        self.lower_deviation_features = parse_csv_env("LOWER_DEVIATION_FEATURES")
+        self.motion_evidence_features = parse_csv_env("MOTION_EVIDENCE_FEATURES")
+        self.motion_evidence_threshold = float(os.getenv("MOTION_EVIDENCE_THRESHOLD", "1.00"))
+        self.motion_evidence_windows = int(os.getenv("MOTION_EVIDENCE_WINDOWS", "1"))
+        self.motion_evidence_required = int(os.getenv("MOTION_EVIDENCE_REQUIRED", "1"))
         self.calibration_values: list[dict[str, float]] = []
         self.adaptive_lower_thresholds: dict[str, float] | None = None
         self.adaptive_thresholds: dict[str, float] | None = None
@@ -90,6 +95,7 @@ class CsiAnomalyService:
         self.model.eval()
 
         self.buffer: deque[float] = deque(maxlen=self.window_size)
+        self.motion_evidence: deque[bool] = deque(maxlen=max(1, self.motion_evidence_windows))
         self.lock = Lock()
         self.latest = LatestResult(
             status="warming_up",
@@ -149,6 +155,8 @@ class CsiAnomalyService:
 
             if self.scoring.get("mode") == "feature_threshold":
                 error, feature_ratios = self.score_feature_threshold(features[0])
+                if self.motion_evidence_features:
+                    error = self.score_motion_evidence(feature_ratios)
             else:
                 normalized = ((features - self.mean) / self.std).astype(np.float32)
                 with torch.no_grad():
@@ -157,7 +165,15 @@ class CsiAnomalyService:
                     error = float(torch.mean((reconstruction - tensor) ** 2).cpu().item())
                 feature_ratios = None
 
-            status: Literal["normal", "abnormal"] = "abnormal" if error > self.threshold else "normal"
+            if self.motion_evidence_features:
+                is_evidence = error >= self.threshold
+                self.motion_evidence.append(is_evidence)
+                required = min(self.motion_evidence_required, self.motion_evidence.maxlen or 1)
+                status: Literal["normal", "abnormal"] = (
+                    "abnormal" if sum(self.motion_evidence) >= required else "normal"
+                )
+            else:
+                status = "abnormal" if error > self.threshold else "normal"
             anomaly_score = min(1.0, max(0.0, error / self.threshold)) if self.threshold > 0 else 0.0
             self.latest = LatestResult(
                 status=status,
@@ -218,11 +234,24 @@ class CsiAnomalyService:
             value = float(features[feature_index[name]])
             ratio = value / threshold_value
             if self.adaptive_lower_thresholds is not None and name in self.adaptive_lower_thresholds and value > 0:
-                ratio = max(ratio, float(self.adaptive_lower_thresholds[name]) / value)
+                if name in self.lower_deviation_features:
+                    ratio = max(ratio, float(self.adaptive_lower_thresholds[name]) / value)
             ratios.append(ratio)
             feature_ratios[name] = ratio
 
         return (max(ratios) if ratios else 0.0), feature_ratios
+
+    def score_motion_evidence(self, feature_ratios: dict[str, float]) -> float:
+        if self.motion_evidence_threshold <= 0:
+            return 0.0
+        evidence_ratios = [
+            float(feature_ratios[name])
+            for name in self.motion_evidence_features
+            if name in feature_ratios
+        ]
+        if not evidence_ratios:
+            return 0.0
+        return max(evidence_ratios) / self.motion_evidence_threshold
 
     def get_latest(self) -> LatestResult:
         with self.lock:
@@ -246,6 +275,11 @@ class CsiAnomalyService:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def parse_csv_env(name: str) -> set[str]:
+    raw_value = os.getenv(name, "")
+    return {value.strip() for value in raw_value.split(",") if value.strip()}
 
 
 def create_app() -> FastAPI:
