@@ -175,7 +175,7 @@ class CsiAnomalyService:
                 )
             else:
                 status = "abnormal" if error > self.status_threshold else "normal"
-            anomaly_score = min(1.0, max(0.0, error / self.threshold)) if self.threshold > 0 else 0.0
+            anomaly_score = max(0.0, error)
             self.latest = LatestResult(
                 status=status,
                 anomalyScore=round(anomaly_score, 4),
