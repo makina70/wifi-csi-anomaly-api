@@ -63,6 +63,7 @@ class CsiAnomalyService:
 
         self.window_size = int(config.get("window_size", 500))
         self.threshold = float(os.getenv("ANOMALY_SCORE_THRESHOLD", checkpoint["threshold"]))
+        self.status_threshold = float(os.getenv("STATUS_SCORE_THRESHOLD", self.threshold))
         self.feature_names = list(checkpoint.get("feature_names", FEATURE_NAMES))
         self.feature_set = str(config.get("feature_set", "base"))
         self.scoring = checkpoint.get("scoring", {"mode": "autoencoder"})
@@ -101,7 +102,7 @@ class CsiAnomalyService:
             status="warming_up",
             anomalyScore=0.0,
             reconstructionError=None,
-            threshold=self.threshold,
+            threshold=self.status_threshold,
             timestamp=utc_now(),
             samplesBuffered=0,
             windowSize=self.window_size,
@@ -118,7 +119,7 @@ class CsiAnomalyService:
                     status="warming_up",
                     anomalyScore=0.0,
                     reconstructionError=None,
-                    threshold=self.threshold,
+                    threshold=self.status_threshold,
                     timestamp=timestamp or utc_now(),
                     samplesBuffered=len(self.buffer),
                     windowSize=self.window_size,
@@ -139,7 +140,7 @@ class CsiAnomalyService:
                         status="warming_up",
                         anomalyScore=0.0,
                         reconstructionError=None,
-                        threshold=self.threshold,
+                        threshold=self.status_threshold,
                         timestamp=timestamp or utc_now(),
                         samplesBuffered=len(self.buffer),
                         windowSize=self.window_size,
@@ -166,20 +167,20 @@ class CsiAnomalyService:
                 feature_ratios = None
 
             if self.motion_evidence_features:
-                is_evidence = error >= self.threshold
+                is_evidence = error >= self.status_threshold
                 self.motion_evidence.append(is_evidence)
                 required = min(self.motion_evidence_required, self.motion_evidence.maxlen or 1)
                 status: Literal["normal", "abnormal"] = (
                     "abnormal" if sum(self.motion_evidence) >= required else "normal"
                 )
             else:
-                status = "abnormal" if error > self.threshold else "normal"
+                status = "abnormal" if error > self.status_threshold else "normal"
             anomaly_score = min(1.0, max(0.0, error / self.threshold)) if self.threshold > 0 else 0.0
             self.latest = LatestResult(
                 status=status,
                 anomalyScore=round(anomaly_score, 4),
                 reconstructionError=error,
-                threshold=self.threshold,
+                threshold=self.status_threshold,
                 timestamp=timestamp or utc_now(),
                 samplesBuffered=len(self.buffer),
                 windowSize=self.window_size,
@@ -264,7 +265,7 @@ class CsiAnomalyService:
                 modelPath=str(self.model_path),
                 samplesBuffered=len(self.buffer),
                 windowSize=self.window_size,
-                threshold=self.threshold,
+                threshold=self.status_threshold,
                 scoringMode=str(self.scoring.get("mode", "autoencoder")),
                 adaptiveThresholds=self.adaptive_thresholds,
                 adaptiveLowerThresholds=self.adaptive_lower_thresholds,
