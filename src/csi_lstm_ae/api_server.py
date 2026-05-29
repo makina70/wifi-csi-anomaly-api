@@ -62,7 +62,7 @@ class CsiAnomalyService:
         config = checkpoint.get("config", {})
 
         self.window_size = int(config.get("window_size", 500))
-        self.threshold = float(checkpoint["threshold"])
+        self.threshold = float(os.getenv("ANOMALY_SCORE_THRESHOLD", checkpoint["threshold"]))
         self.feature_names = list(checkpoint.get("feature_names", FEATURE_NAMES))
         self.feature_set = str(config.get("feature_set", "base"))
         self.scoring = checkpoint.get("scoring", {"mode": "autoencoder"})

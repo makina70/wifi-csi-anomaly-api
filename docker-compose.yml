@@ -6,6 +6,7 @@ services:
     environment:
       MODEL_PATH: /app/models/feature_ae_w500/model.pt
       MODEL_DEVICE: cpu
+      ANOMALY_SCORE_THRESHOLD: "0.80"
       ADAPTIVE_FEATURE_CALIBRATION: "true"
       CALIBRATION_WINDOWS: "20"
       CALIBRATION_LOWER_QUANTILE: "0.20"
